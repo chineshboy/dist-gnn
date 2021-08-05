@@ -15,6 +15,7 @@ from dist_data import DistData
 
 run = 0
 
+
 def outer_product2(inputs, ag):
     torch.cuda.synchronize()
 
@@ -22,7 +23,7 @@ def outer_product2(inputs, ag):
     grad_weight = torch.mm(inputs, ag) # (H^(l-1))^T * (A * G^l)
     torch.cuda.synchronize()
     g_timer.stop('mm')#, 'comp')
-    
+
     g_timer.start('all reduce')
     dist.all_reduce(grad_weight, op=dist.ReduceOp.SUM, group=g_env.world_group)
     torch.cuda.synchronize()
@@ -56,6 +57,7 @@ cache_backward_layer1 = [None]*8
 cache_backward_layer2 = [None]*8
 cache_enabled = True
 
+
 def broad_func(node_count, am_partitions, inputs, btype=None):
     global cache_features
     device = g_env.device
@@ -85,7 +87,7 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
         g_timer.barrier_all()
         torch.cuda.synchronize()
 
-        g_timer.start('broadcast')
+        g_timer.start(f'gcn_broadcast_{btype}_ep{cur_epoch}')
         if not cache_enabled:
             dist.broadcast(inputs_recv, src=i, group=g_env.world_group)
         else:
@@ -130,18 +132,19 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
                 dist.broadcast(inputs_recv, src=i, group=g_env.world_group)
         # p2p_broadcast(inputs_recv, i)
         torch.cuda.synchronize()  # comm or comp?
-        g_timer.stop('broadcast', btype)#,'comm')
+        g_timer.stop(f'gcn_broadcast_{btype}_ep{cur_epoch}', btype)#,'comm')
+        g_logger.log(f'[gcn_broadcast_{btype}_ep{cur_epoch}] size: {utils.mem_report(inputs_recv)} MBytes')
 
         g_timer.barrier_all()
         torch.cuda.synchronize()
 
-        g_timer.start('spmm')
-        spmm_gpu(am_partitions[i].indices()[0].int(), am_partitions[i].indices()[1].int(), 
-                        am_partitions[i].values(), am_partitions[i].size(0), 
+        g_timer.start(f'gcn_spmm_ep{cur_epoch}')
+        spmm_gpu(am_partitions[i].indices()[0].int(), am_partitions[i].indices()[1].int(),
+                        am_partitions[i].values(), am_partitions[i].size(0),
                         am_partitions[i].size(1), inputs_recv, z_loc)
 
         torch.cuda.synchronize()
-        g_timer.stop('spmm')#, 'comp')
+        g_timer.stop(f'gcn_spmm_ep{cur_epoch}')#, 'comp')
         g_timer.barrier_all()
     return z_loc
 
@@ -156,10 +159,10 @@ class GCNFunc(torch.autograd.Function):
         z = broad_func(adj_matrix.size(0), am_partitions, inputs, btype=btype)
 
         torch.cuda.synchronize()
-        g_timer.start('mm')
+        g_timer.start(f'gcn_mm_ep{cur_epoch}')
         z = torch.mm(z, weight)
         torch.cuda.synchronize()
-        g_timer.stop('mm') #, 'comp')
+        g_timer.stop(f'gcn_mm_ep{cur_epoch}') #, 'comp')
 
         z.requires_grad = True
         ctx.z = z
@@ -191,7 +194,7 @@ class GCNFunc(torch.autograd.Function):
         return grad_input, grad_weight, None, None, None, None, None, None
 
 
-def train(inputs, weight1, weight2, adj_matrix, am_partitions, optimizer, local_train_mask, local_labels):
+def train(inputs, weight1, weight2, adj_matrix, am_partitions, optimizer, local_train_mask, local_labels, device):
     outputs = GCNFunc.apply(inputs, weight1, adj_matrix, am_partitions, F.relu, 'layer1')
     outputs = GCNFunc.apply(outputs, weight2, adj_matrix, am_partitions, lambda x:F.log_softmax(x, dim=1), 'layer2')
 
@@ -220,7 +223,7 @@ def test(outputs, vertex_count):
 def main():
     global run
     global cur_epoch
-    inputs_loc, adj_matrix_loc, am_pbyp = g_data.local_features, g_data.local_adj, g_data.local_adj_parts 
+    inputs_loc, adj_matrix_loc, am_pbyp = g_data.local_features, g_data.local_adj, g_data.local_adj_parts
     device = g_env.device
 
     torch.cuda.synchronize()
@@ -247,29 +250,28 @@ def main():
         for epoch in range(args.epochs):
             cur_epoch = epoch
             g_timer.start('train')
-            outputs = train(inputs_loc, weight1, weight2, adj_matrix_loc, am_pbyp, optimizer, local_train_mask, local_labels)
+            outputs = train(inputs_loc, weight1, weight2, adj_matrix_loc, am_pbyp, optimizer, local_train_mask, local_labels, device)
             g_timer.stop('train')
             # if epoch%10==0:
                 # g_logger.log("Epoch: {:03d}".format(epoch), oneline=True)
-                
+
             if (epoch+1)%5==0:
                 n_per_proc = math.ceil(g_data.g.features.size(0) / g_env.world_size)
                 output_parts = [torch.zeros(n_per_proc, g_data.g.num_classes, device=g_env.device) for i in range(g_env.world_size)]
 
                 if outputs.size(0) != n_per_proc:
-                    pad_row = n_per_proc - outputs.size(0) 
+                    pad_row = n_per_proc - outputs.size(0)
                     outputs = torch.cat((outputs, torch.cuda.FloatTensor(pad_row, g_data.g.num_classes, device=g_env.device)), dim=0)
                 dist.all_gather(output_parts, outputs) # output_parts[g_env.rank] = outputs
-                
+
                 padding = g_data.g.features.size(0) - n_per_proc * (g_env.world_size - 1)
                 output_parts[g_env.world_size - 1] = output_parts[g_env.world_size - 1][:padding,:]
                 outputs = torch.cat(output_parts, dim=0)
 
                 train_acc, val_acc, test_acc = test(outputs, am_pbyp[0].size(1))
                 g_logger.log( 'Epoch: {:03d}/{:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'.format(epoch+1, args.epochs, train_acc, val_acc, test_acc), rank=0)
-                
 
-        g_logger.log(g_timer.summary_all(), rank=0)
+        # g_logger.log(g_timer.summary_all(), rank=0)
     return outputs
 
 
@@ -289,10 +291,15 @@ if __name__ == '__main__':
 
     g_timer = utils.DistTimer(g_env)
     g_logger = utils.DistLogger(g_env)
-    g_logger.log('dist env inited:', g_env.backend, g_env.world_size)
+    g_logger.log(f'dist env inited: {g_env.backend} {g_env.world_size}')
 
     g_data = DistData(g_env, args.graphname)
-    g_logger.log('dist data inited', args.graphname)
+    g_logger.log(f'dist data inited: {args.graphname}')
 
     main()
 
+    if args.local_rank == 0:
+        with open('./timer.log', 'w') as f:
+            f.write(g_timer.summary_all())
+        with open('./mem.log', 'w') as f:
+            f.write(g_logger.summary_all())
