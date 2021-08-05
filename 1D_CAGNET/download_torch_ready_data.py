@@ -102,8 +102,8 @@ class TinyReddit(TorchGeometricDataSet):
 
 
 def main():
-    # Reddit()
-    TinyReddit()
+    Reddit()
+    # TinyReddit()
     # SmallerReddit()
     # OneQuarterReddit()
     # Cora()
