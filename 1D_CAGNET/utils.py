@@ -55,7 +55,7 @@ class DistLogger(DistUtil):
         if rank != -1 and rank != self.rank:
             return
         whole_line = f'{dt.datetime.now().time()} [{self.rank}] {line}'
-        print(whole_line, end='', flush=True)  # to prevent line breaking
+        # print(whole_line, end='', flush=True)  # to prevent line breaking
         self.logs.append(whole_line)
 
     def sync_duration_dicts(self):
