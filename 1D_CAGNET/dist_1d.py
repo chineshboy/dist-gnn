@@ -298,8 +298,10 @@ if __name__ == '__main__':
 
     main()
 
+    timer_log = g_timer.summary_all()
+    mem_log = g_logger.summary_all()
     if args.local_rank == 0:
         with open('./timer.log', 'w') as f:
-            f.write(g_timer.summary_all())
+            f.write(timer_log)
         with open('./mem.log', 'w') as f:
-            f.write(g_logger.summary_all())
+            f.write(mem_log)
