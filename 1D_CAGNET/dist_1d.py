@@ -19,26 +19,26 @@ run = 0
 def outer_product2(inputs, ag):
     torch.cuda.synchronize()
 
-    g_timer.start('mm')
+    g_timer.start(f'gcn_mm_{cur_epoch}')
     grad_weight = torch.mm(inputs, ag) # (H^(l-1))^T * (A * G^l)
     torch.cuda.synchronize()
-    g_timer.stop('mm')#, 'comp')
+    g_timer.stop(f'gcn_mm_{cur_epoch}')#, 'comp')
 
-    g_timer.start('all reduce')
+    g_timer.start(f'gcn_allreduce_{cur_epoch}')
     dist.all_reduce(grad_weight, op=dist.ReduceOp.SUM, group=g_env.world_group)
     torch.cuda.synchronize()
-    g_timer.stop('all reduce')#, 'comm')
+    g_timer.stop(f'gcn_allreduce_{cur_epoch}')#, 'comm')
     return grad_weight
 
 
 def p2p_broadcast(t, src):
     for dst in range(g_env.world_size):
-        if src==dst or g_env.rank not in (src, dst):
+        if src == dst or g_env.rank not in (src, dst):
             # g_logger.log('p2p bcast skip', src, dst)
             continue
         dst_adj_nz_col = g_data.nz_col_dict[(dst, src)]  #  non zero
         needed_rows_idx = dst_adj_nz_col
-        if g_env.rank==src:
+        if g_env.rank == src:
             p2p_buf = t[needed_rows_idx]
         elif g_env.rank == dst:
             p2p_buf = torch.zeros((needed_rows_idx.size(0), t.size(1)), device=g_env.device)
@@ -49,6 +49,7 @@ def p2p_broadcast(t, src):
             t[needed_rows_idx] = p2p_buf
             # g_logger.log('p2p dst done', src, dst)
             return
+
 
 cur_epoch = 0
 cache_features = [None]*8
@@ -67,17 +68,16 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
 
 
     for i in range(g_env.world_size):
-        layer1_use_cache = cur_epoch>=1
+        layer1_use_cache = cur_epoch >= 1
 
-        layer2_use_cache = cur_epoch>=50 and cur_epoch%5!=0
+        layer2_use_cache = cur_epoch >= 50 and cur_epoch % 5 != 0
         # layer2_use_cache = False
 
-        backward_layer2_use_cache = cur_epoch>=50 and cur_epoch%5!=0
+        backward_layer2_use_cache = cur_epoch >= 50 and cur_epoch % 5 != 0
         backward_layer2_use_cache = False
 
-        backward_layer1_use_cache = cur_epoch>=50 and cur_epoch%5!=0
+        backward_layer1_use_cache = cur_epoch >= 50 and cur_epoch % 5 != 0
         backward_layer1_use_cache = False
-
 
         if i == g_env.rank:
             inputs_recv = inputs.clone()
@@ -91,10 +91,10 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
         if not cache_enabled:
             dist.broadcast(inputs_recv, src=i, group=g_env.world_group)
         else:
-            if btype=='layer1':
+            if btype == 'layer1':
                 if layer1_use_cache:
                     # g_logger.log(cur_epoch, i, 'use cache', btype)
-                    if g_env.rank!=i:
+                    if g_env.rank != i:
                         # g_logger.log(cur_epoch, i, 'no copy', btype, type(inputs_recv), inputs_recv.size())
                         inputs_recv = cache_features[i]
                     else:
@@ -105,25 +105,25 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
                     # if cache_features[i] is not None:
                         # g_logger.log(cur_epoch, i,'normal broadcast', torch.sum(inputs_recv), torch.sum(cache_features[i] ))
                     cache_features[i] = inputs_recv.clone()
-            elif btype=='layer2':
+            elif btype == 'layer2':
                 if layer2_use_cache:
-                    if g_env.rank!=i:
+                    if g_env.rank != i:
                         inputs_recv = cache_layer2[i]
                 else:
                     dist.broadcast(inputs_recv, src=i, group=g_env.world_group)
                     # if cache_layer2[i] is not None:
                         # g_logger.log(cur_epoch, i,'normal broadcast', torch.sum(inputs_recv), torch.sum(cache_layer2[i] ))
                     cache_layer2[i] = inputs_recv.clone()
-            elif btype=='backward_layer2':
+            elif btype == 'backward_layer2':
                 if backward_layer2_use_cache:
-                    if g_env.rank!=i:
+                    if g_env.rank != i:
                         inputs_recv = cache_backward_layer2[i]
                 else:
                     dist.broadcast(inputs_recv, src=i, group=g_env.world_group)
                     cache_backward_layer2[i] = inputs_recv.clone()
-            elif btype=='backward_layer1':
+            elif btype == 'backward_layer1':
                 if backward_layer1_use_cache:
-                    if g_env.rank!=i:
+                    if g_env.rank != i:
                         inputs_recv = cache_backward_layer1[i]
                 else:
                     dist.broadcast(inputs_recv, src=i, group=g_env.world_group)
@@ -183,10 +183,10 @@ class GCNFunc(torch.autograd.Function):
         ag = broad_func(adj_matrix.size(0), am_partitions, grad_output, btype='backward_'+btype)
 
         torch.cuda.synchronize()
-        g_timer.start('mm')
+        g_timer.start(f'gcn_mm_ep{cur_epoch}')
         grad_input = torch.mm(ag, weight.t())
         torch.cuda.synchronize()
-        g_timer.stop('mm')#, 'comp')
+        g_timer.stop(f'gcn_mm_ep{cur_epoch}')#, 'comp')
 
         # Second backprop equation (reuses the A * G^l computation)
         grad_weight = outer_product2(inputs.t(), ag)
