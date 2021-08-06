@@ -133,7 +133,7 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
                 dist.broadcast(inputs_recv, src=i, group=g_env.world_group)
         # p2p_broadcast(inputs_recv, i)
         torch.cuda.synchronize()  # comm or comp?
-        g_timer.stop(f'gcn_broadcast_{btype}_ep{cur_epoch}', btype)#,'comm')
+        g_timer.stop(f'gcn_broadcast_{btype}_ep{cur_epoch}')#,'comm')
         g_logger.log(f'[gcn_broadcast_{btype}_ep{cur_epoch}] size: {utils.mem_report(inputs_recv)} MBytes')
 
         g_timer.barrier_all()
