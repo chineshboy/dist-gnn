@@ -1,6 +1,7 @@
 import os
 import math
 import argparse
+import pickle
 
 import torch
 import torch.distributed as dist
@@ -298,10 +299,10 @@ if __name__ == '__main__':
 
     main()
 
-    timer_log = g_timer.summary_all()
-    mem_log = g_logger.summary_all()
+    timer_log = g_timer.sync_duration_dicts()
+    mem_log = g_logger.sync_duration_dicts()
     if args.local_rank == 0:
-        with open('./timer.log', 'w') as f:
-            f.write(timer_log)
-        with open('./mem.log', 'w') as f:
-            f.write(mem_log)
+        with open('./timer.log', 'wb') as f:
+            pickle.dump(timer_log, f)
+        with open('./mem.log', 'wb') as f:
+            pickle.dump(mem_log, f)
