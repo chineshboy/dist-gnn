@@ -152,7 +152,7 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
 
 class GCNFunc(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, inputs, weight, adj_matrix, am_partitions,  activation_func, btype):
+    def forward(ctx, inputs, weight, adj_matrix, am_partitions, activation_func, btype):
         ctx.save_for_backward(inputs, weight, adj_matrix)
         ctx.am_partitions = am_partitions
         ctx.activation_func = activation_func
@@ -225,6 +225,7 @@ def main():
     global run
     global cur_epoch
     inputs_loc, adj_matrix_loc, am_pbyp = g_data.local_features, g_data.local_adj, g_data.local_adj_parts
+    # am_partition: adjacency matrix partition
     device = g_env.device
 
     torch.cuda.synchronize()

@@ -166,7 +166,7 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
 
 class GCNFunc(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, inputs, weight, adj_matrix, am_partitions,  activation_func, btype):
+    def forward(ctx, inputs, weight, adj_matrix, am_partitions, activation_func, btype):
         ctx.save_for_backward(inputs, weight, adj_matrix)
         ctx.am_partitions = am_partitions
         ctx.activation_func = activation_func
@@ -209,7 +209,7 @@ class GCNFunc(torch.autograd.Function):
         return grad_input, grad_weight, None, None, None, None, None, None
 
 
-def train(inputs, weight1, weight2, weight3, adj_matrix, am_partitions, optimizer, local_train_mask, local_labels, epoch):
+def train(inputs, weight1, weight2, weight3, adj_matrix, am_partitions, optimizer, local_train_mask, local_labels, epoch, device):
 # def train(inputs, weight1, weight2, adj_matrix, am_partitions, optimizer, local_train_mask, local_labels, epoch):
     outputs = GCNFunc.apply(inputs, weight1, adj_matrix, am_partitions, F.relu, 'layer1')
     # outputs = GCNFunc.apply(outputs, weight2, adj_matrix, am_partitions, F.sigmoid, 'layer2')
@@ -284,7 +284,7 @@ def main():
         for epoch in range(args.epochs):
             cur_epoch = epoch
             g_timer.start('train')
-            outputs = train(inputs_loc, weight1, weight2, weight3, adj_matrix_loc, am_pbyp, optimizer, local_train_mask, local_labels, epoch)
+            outputs = train(inputs_loc, weight1, weight2, weight3, adj_matrix_loc, am_pbyp, optimizer, local_train_mask, local_labels, epoch, device)
             # outputs = train(inputs_loc, weight1, weight2, adj_matrix_loc, am_pbyp, optimizer, local_train_mask, local_labels, epoch)
             g_timer.stop('train')
             # if epoch%10==0:
