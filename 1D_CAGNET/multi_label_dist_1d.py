@@ -2,6 +2,7 @@ import os
 import math
 import argparse
 import sklearn.metrics
+import pickle
 
 import torch
 import torch.distributed as dist
@@ -306,7 +307,7 @@ def main():
                 g_logger.log( 'Epoch: {:03d}/{:03d}, Train: {:.4f}, Val: {:.4f}, Test: {:.4f}'.format(epoch+1, args.epochs, train_acc, val_acc, test_acc), rank=0)
 
 
-        g_logger.log(g_timer.summary_all(), rank=0)
+        # g_logger.log(g_timer.summary_all(), rank=0)
     return outputs
 
 
@@ -326,11 +327,18 @@ if __name__ == '__main__':
 
     g_timer = utils.DistTimer(g_env)
     g_logger = utils.DistLogger(g_env)
-    g_logger.log('dist env inited:', g_env.backend, g_env.world_size)
+    # g_logger.log('dist env inited:', g_env.backend, g_env.world_size)
 
     g_data = DistData(g_env, args.graphname)
     # print(g_data.g.labels)
-    g_logger.log('dist data inited', args.graphname)
+    # g_logger.log('dist data inited', args.graphname)
 
     main()
 
+    timer_log = g_timer.sync_duration_dicts()
+    mem_log = g_logger.sync_duration_dicts()
+    if args.local_rank == 0:
+        with open('./ml_timer.pkl', 'wb') as f:
+            pickle.dump(timer_log, f)
+        with open('./ml_mem.pkl', 'wb') as f:
+            pickle.dump(mem_log, f)
