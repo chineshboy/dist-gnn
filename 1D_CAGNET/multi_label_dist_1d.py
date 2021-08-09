@@ -91,7 +91,7 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
         elif i == g_env.world_size - 1:
             inputs_recv = torch.zeros((am_partitions[i].size(1), inputs.size(1)), device=device)
 
-        g_timer.barrier_all()
+        # g_timer.barrier_all()
         torch.cuda.synchronize()
 
         g_timer.start(f'gcn_broadcast_{btype}_ep{cur_epoch}')
@@ -150,7 +150,7 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
         g_timer.stop(f'gcn_broadcast_{btype}_ep{cur_epoch}')#,'comm')
         g_logger.log(f'[gcn_broadcast_{btype}_ep{cur_epoch}] size: {utils.mem_report(inputs_recv)} MBytes')
 
-        g_timer.barrier_all()
+        # g_timer.barrier_all()
         torch.cuda.synchronize()
 
         g_timer.start(f'gcn_spmm_ep{cur_epoch}')
@@ -160,7 +160,7 @@ def broad_func(node_count, am_partitions, inputs, btype=None):
 
         torch.cuda.synchronize()
         g_timer.stop(f'gcn_spmm_ep{cur_epoch}')#, 'comp')
-        g_timer.barrier_all()
+        # g_timer.barrier_all()
     return z_loc
 
 
