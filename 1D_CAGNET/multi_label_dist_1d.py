@@ -338,7 +338,7 @@ if __name__ == '__main__':
     timer_log = g_timer.sync_duration_dicts()
     mem_log = g_logger.sync_duration_dicts()
     if args.local_rank == 0:
-        with open('./ml_timer.pkl', 'wb') as f:
+        with open('logs/ml_timer.pkl', 'wb') as f:
             pickle.dump(timer_log, f)
-        with open('./ml_mem.pkl', 'wb') as f:
+        with open('logs/ml_mem.pkl', 'wb') as f:
             pickle.dump(mem_log, f)

@@ -72,45 +72,46 @@ class DistTimer(DistUtil):
     def __init__(self, env: DistEnv):
         super().__init__(env)
         self.start_time_dict = {}
-        self.duration_dict = defaultdict(float)
-        self.count_dict = defaultdict(int)
+        self.duration_array = []
 
     def summary(self):
-        s = '\ntimer summary:\n' +  "\n".join("%6.2fs %5d %s" % (self.duration_dict[key], self.count_dict[key], key) for key in self.duration_dict)
+        s = '\ntimer summary:\n' + "\n".join("%6.2fs %s" % (item['duration'], item['key']) for item in self.duration_array)
         return s
 
     def sync_duration_dicts(self):
-        self.store.set('duration_dict_%d'%self.rank, pickle.dumps(self.duration_dict))
+        self.store.set('duration_array_%d' % self.rank, pickle.dumps(self.duration_array))
         self.env.barrier_all()
-        return [pickle.loads(self.store.get('duration_dict_%d'%rank)) for rank in range(self.world_size)]
+        return [pickle.loads(self.store.get('duration_array_%d' % rank)) for rank in range(self.world_size)]
 
     def summary_all(self):
         all_durations = self.sync_duration_dicts()
         avg_dict = {}
         std_dict = {}
-        for key in self.duration_dict:
-            data = [d[key] for d in all_durations]
+        for idx in range(len(self.duration_array)):
+            key = self.duration_array[idx]['key']
+            data = [d[idx]['duration'] for d in all_durations]
             avg_dict[key], std_dict[key] = statistics.mean(data), statistics.stdev(data)
-        s = '\ntimer summary:\n' +  "\n".join("%6.2fs %6.2fs %5d %s" % (avg_dict[key], std_dict[key], self.count_dict[key], key) for key in self.duration_dict)
+        s = '\ntimer summary:\n' + "\n".join("%6.2fs %6.2fs %s" % (avg_dict[key], std_dict[key], key) for key in avg_dict)
         return s
 
-    def barrier_all(self):
-        return
-        self.start('barrier')
-        self.env.barrier_all()
-        self.stop('barrier')
+    # def barrier_all(self):
+    #     return
+    #     self.start('barrier')
+    #     self.env.barrier_all()
+    #     self.stop('barrier')
 
     def start(self, key: str):
         self.start_time_dict[key] = time.time()
         return self.start_time_dict[key]
 
-    def stop(self, key: str, *other_keys):
-        def log(k, d=time.time() - self.start_time_dict[key]):
-            self.duration_dict[k]+=d
-            self.count_dict[k]+=1
-        log(key)
-        for subkey in other_keys:
-            log(key+'-'+subkey)
+    def stop(self, key: str):
+        d = time.time() - self.start_time_dict[key]
+        self.duration_array.append({
+            'key': key,
+            'duration': d
+        })
+        # self.order_dict[key] = self.order
+        # self.count_dict[key] += 1
         return
 
 
@@ -156,6 +157,8 @@ def mem_report(*tensors):
     # print('-'*LEN)
     return total_mem
 
+
+# def my_broadcast(tensor, src, group)
 
 if __name__ == '__main__':
     pass
